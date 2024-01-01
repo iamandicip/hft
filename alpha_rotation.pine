@@ -1,0 +1,66 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Ciprian16275
+
+//@version=5
+indicator('Alpha rotation', overlay=false)
+
+starting_year = input.int(title='Starting year', defval=2010, minval=2005)
+ma_period = input.int(title='MA Period', defval=10, minval=1)
+ma_resolution = input.string(title='MA Resolution', defval='D', options=['W', 'D'])
+
+signal = 0.0
+color line_color = na
+number_of_etfs = 5
+ma = ta.sma(close, ma_period)
+
+w_spy_vs_bonds = 0.20
+w_spy_vs_gold = 0.20
+w_spy_vs_utilities = 0.20
+w_junk_vs_bonds = 0.20
+w_wood_vs_gold = 0.20
+
+calculate_trend(v_ticker) =>
+    v_sec = request.security(v_ticker, ma_resolution, close)
+    v_sec_ma = request.security(v_ticker, ma_resolution, ma)
+    v_sec / v_sec_ma
+
+update_signal(v_bull_trend, v_bear_trend, v_sig, v_weight) =>
+    sig = v_sig
+    if v_bull_trend >= 1 and v_bull_trend > v_bear_trend
+        sig := v_sig + number_of_etfs * v_weight
+        sig
+    else if v_bull_trend < 1 and v_bear_trend > v_bull_trend
+        sig := v_sig - number_of_etfs * v_weight
+        sig
+    sig
+
+calculate_line_color(v_sig, v_current_color) =>
+    v_color = v_current_color
+    if v_sig >= 2
+        v_color := color.green
+        v_color
+    else if v_sig <= -2
+        v_color := color.red
+        v_color
+    else
+        v_color := color.yellow
+        v_color
+    v_color
+
+spy_trend = calculate_trend('SPY')
+bonds_trend = calculate_trend('TLT')
+gold_trend = calculate_trend('GLD')
+junk_trend = calculate_trend('JNK')
+utilities_trend = calculate_trend('XLU')
+wood_trend = calculate_trend('WOOD')
+
+signal := update_signal(spy_trend, utilities_trend, signal, w_spy_vs_utilities)
+signal := update_signal(junk_trend, bonds_trend, signal, w_junk_vs_bonds)
+signal := update_signal(wood_trend, gold_trend, signal, w_wood_vs_gold)
+signal := update_signal(spy_trend, bonds_trend, signal, w_spy_vs_bonds)
+signal := update_signal(spy_trend, gold_trend, signal, w_spy_vs_gold)
+
+line_color := calculate_line_color(signal, line_color)
+
+plot(close, color=line_color, linewidth=3)
+

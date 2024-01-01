@@ -1,0 +1,118 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Ciprian16275
+
+//@version=5
+strategy('Alpha Rotation SPY', overlay=true, calc_on_every_tick=true, calc_on_order_fills=true, max_bars_back=2200, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, process_orders_on_close=true)
+
+starting_year = input.int(title='Starting year', defval=2010, minval=2005)
+ending_year = input.int(title='Ending year', defval=2020, minval=2010)
+ma_period = input.int(title='MA Period', defval=10, minval=1)
+ma_resolution = input.string(title='MA Resolution', defval='D', options=['W', 'D'])
+
+long_loss_perc = input.float(title='Long Stop Loss (%)', minval=0.0, step=0.1, defval=6) * 0.01
+short_loss_perc = input.float(title='Short Stop Loss (%)', minval=0.0, step=0.1, defval=6) * 0.01
+
+signal = 0.0
+color line_color = color.green
+number_of_etfs = 5
+ma = ta.sma(close, ma_period)
+
+w_spy_vs_bonds = 0.20
+w_spy_vs_gold = 0.20
+w_spy_vs_utilities = 0.20
+w_junk_vs_bonds = 0.20
+w_wood_vs_gold = 0.20
+
+spy = request.security('SPY', ma_resolution, close)
+
+calculate_trend(v_ticker) =>
+    v_sec = request.security(v_ticker, ma_resolution, close)
+    v_sec_ma = request.security(v_ticker, ma_resolution, ma)
+    v_sec / v_sec_ma
+
+update_signal(v_bull_trend, v_bear_trend, v_sig, v_weight) =>
+    sig = v_sig
+    if v_bull_trend >= 1 and v_bull_trend > v_bear_trend
+        sig := v_sig + number_of_etfs * v_weight
+        sig
+    else if v_bull_trend < 1 and v_bear_trend > v_bull_trend
+        sig := v_sig - number_of_etfs * v_weight
+        sig
+    sig
+
+rebalance(v_signal) =>
+    v_color = line_color
+    if v_signal >= 1
+        // strategy.close("Short", when = year >= starting_year and year <= ending_year and strategy.position_size < 0)
+        if year >= starting_year and year <= ending_year
+            strategy.entry('Long', strategy.long)
+            v_color := color.green
+            v_color
+    else if v_signal <= 0
+        if year >= starting_year and year <= ending_year and strategy.position_size > 0
+            strategy.close('Long')
+            // strategy.entry("Short", strategy.short, when = year >= starting_year and year <= ending_year)
+            v_color := color.red
+            v_color
+    v_color
+
+calculate_long_stop_loss_price(v_long_loss_perc) =>
+    long_stop_price = 0.0
+
+    long_stop_price := if strategy.position_size > 0
+        stop_value = close * (1 - v_long_loss_perc)
+        math.max(stop_value, long_stop_price[1])
+    else
+        0
+    long_stop_price
+
+calculate_short_stop_loss_price(v_short_loss_perc) =>
+    short_stop_price = 0.0
+
+    short_stop_price := if strategy.position_size < 0
+        stop_value = close * (1 + v_short_loss_perc)
+        math.max(stop_value, short_stop_price[1])
+    else
+        0
+    short_stop_price
+
+trigger_stop_loss(v_long_stop_price, v_short_stop_price) =>
+    stop_loss_exit = false
+
+    if strategy.position_size > 0 and v_long_stop_price > 0
+        strategy.exit('Stop-loss Long', 'Long', stop=v_long_stop_price)
+        stop_loss_exit := v_long_stop_price >= close
+        stop_loss_exit
+
+    else if strategy.position_size < 0 and v_short_stop_price > 0
+        strategy.exit('Stop-loss Short', 'Short', stop=v_short_stop_price)
+        stop_loss_exit := v_short_stop_price <= close
+        stop_loss_exit
+
+    stop_loss_exit
+
+long_stop_price = calculate_long_stop_loss_price(long_loss_perc)
+short_stop_price = calculate_short_stop_loss_price(short_loss_perc)
+
+if not trigger_stop_loss(long_stop_price, short_stop_price)
+    spy_trend = calculate_trend('SPY')
+    bonds_trend = calculate_trend('TLT')
+    gold_trend = calculate_trend('GLD')
+    junk_trend = calculate_trend('JNK')
+    utilities_trend = calculate_trend('XLU')
+    wood_trend = calculate_trend('WOOD')
+
+    signal := update_signal(spy_trend, utilities_trend, signal, w_spy_vs_utilities)
+    signal := update_signal(junk_trend, bonds_trend, signal, w_junk_vs_bonds)
+    signal := update_signal(wood_trend, gold_trend, signal, w_wood_vs_gold)
+    signal := update_signal(spy_trend, bonds_trend, signal, w_spy_vs_bonds)
+    signal := update_signal(spy_trend, gold_trend, signal, w_spy_vs_gold)
+
+    line_color := rebalance(signal)
+    line_color
+
+// plot(strategy.equity, color=color.blue)
+// line_color := calculate_line_color(signal, line_color)
+
+plot(close, color=color.new(line_color, 0), linewidth=3)
+

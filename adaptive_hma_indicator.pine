@@ -1,0 +1,106 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Ciprian16275
+
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// 2020 © io72signals 
+
+//@version=5
+indicator('72s: Adaptive Hull Moving Average+', shorttitle='72s: Adaptive HMA+', overlay=true)
+
+//Optional Inputs
+charger = input.string('Volatility', title='Choose which charger to adapt to:', options=['Volatility', 'Volume'])
+src = input(close, title='Source:')
+minLength = input(172, title='Minimum period:')
+maxLength = input(233, title='Maximum period:')
+adaptPct = input.float(3.141, minval=0, maxval=100, title='Adapting Percentage:') / 100.0
+
+// CORE LOGIC START
+// =================================================================================================================
+//Source to adapt to
+highVolatility = ta.atr(13) > ta.atr(40)  //Volatility Meter. Change it to match to your strat/pair/tf if needs.
+
+rsivol = ta.rsi(volume, 14)  //RSI Volume Osc:
+osc = ta.hma(rsivol, 10)  //Basically it's almost the same as: vol > ma(volume,20)
+volBreak = osc > 49  // but smoothed using weight to filter noise or catch earlier signs.    
+
+//Dynamics 
+var float dynamicLen = math.avg(minLength, maxLength)
+plugged = charger == 'Volume' ? volBreak : highVolatility
+dynamicLen := plugged ? math.max(minLength, dynamicLen * (1 - adaptPct)) : math.min(maxLength, dynamicLen * (1 + adaptPct))
+
+//Slope calculation to determine whether market is in trend, or in consolidation or choppy, or might about to change current trend
+slope_period = 34
+range_1 = 25
+pi = math.atan(1) * 4
+highestHigh = ta.highest(slope_period)
+lowestLow = ta.lowest(slope_period)
+slope_range = range_1 / (highestHigh - lowestLow) * lowestLow
+
+calcslope(_ma) =>
+    dt = (_ma[2] - _ma) / src * slope_range
+    c = math.sqrt(1 + dt * dt)
+    xAngle = math.round(180 * math.acos(1 / c) / pi)
+    maAngle = dt > 0 ? -xAngle : xAngle
+    maAngle
+
+//Adaptive HMA 
+xhma(_src, _length) =>
+    _return = ta.wma(2 * ta.wma(_src, _length / 2) - ta.wma(_src, _length), int(math.sqrt(_length)))
+    _return
+
+dynamicHMA = xhma(close, int(dynamicLen))
+slope = calcslope(dynamicHMA)
+
+flat = input(9, title='Consolidation area threshold:')
+notgreat = slope < flat and slope > -flat
+bullish = slope >= flat
+bearish = slope <= -flat
+// =================================================================================================================
+// CORE LOGIC END
+
+
+// UI LOGIC START
+// =================================================================================================================
+
+//MA coloring to mark market dynamics 
+
+dynColor(_plugged, _bullish, _bearish, _col1a, _col1b, _col2a, _col2b, _col0) =>
+    result = _col0
+    
+    // Check slope conditions
+    if _bullish
+        result := _plugged ? _col1a : _col1b
+    else if _bearish
+        result := _plugged ? _col2a : _col2b
+
+    result
+
+
+//Plot
+dynamicColor = dynColor(plugged, bullish, bearish, #6fbf73, #c0f5ae, #eb4d5c, #f2b1d4, color.yellow)
+plot(dynamicHMA, 'Dynamic HMA', dynamicColor, 3)
+
+// Comparative study
+// staticHMA = ta.hma(close, 200)
+// plot(staticHMA,  "Static HMA")
+// plotchar(dynamicLen, "dynamicLength", "", location.top) //check output the calculated Dynamic Length in the Data Window.
+
+//Backgroud coloring
+useBg = input(true, title='Background color to differentiate movement')
+
+getBgColor(_useBg, _plugged) =>
+    result = color.new(color.white, 90) // for initializing the type
+    result := na
+    if _useBg and not _plugged
+        result := notgreat ? color.new(#a5a39d, 50) : color.new(#6bcc95, 90)
+
+    result
+
+bgcolor(getBgColor(useBg, plugged))
+
+//Alerts
+alertcondition(highVolatility and not notgreat, '72s: Volatility Meter', 'Market is on the move')
+alertcondition(volBreak[1] and volBreak and not notgreat, '72s: Volume Break', 'Volume has just break above average')
+
+// =================================================================================================================
+// UI LOGIC END

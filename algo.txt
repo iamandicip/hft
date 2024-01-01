@@ -1,0 +1,4 @@
+SMA 20
+SMA 50 Buy
+VRVP
+Hull butterfly Oscillator (LuxAlgo)

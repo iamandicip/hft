@@ -1,0 +1,77 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Ciprian16275
+
+//@version=5
+indicator('Market phases', overlay=false)
+
+transp = 75
+color bullish = color.new(color.green,  transp)
+color warning = color.new(color.yellow,  transp)
+color distribution = color.new(color.orange,  transp)
+color bearish = color.new(color.red,  transp)
+color recovery = color.new(color.aqua,  transp)
+color accumulation = color.new(color.lime,  transp)
+
+regime = 'default'
+
+calcslope(_ma) =>
+    slope_period = 34
+    range_1 = 25
+    pi = math.atan(1) * 4
+    highestHigh = ta.highest(slope_period)
+    lowestLow = ta.lowest(slope_period)
+    slope_range = range_1 / (highestHigh - lowestLow) * lowestLow
+
+    dt = (_ma[2] - _ma) / close * slope_range
+    c = math.sqrt(1 + dt * dt)
+    xAngle = math.round(180 * math.acos(1 / c) / pi)
+    maAngle = dt > 0 ? -xAngle : xAngle
+    maAngle
+
+calculate_slope_old(v_sec) =>
+    rad2degree = 180 / 3.14159265359  //pi
+    slopeD = rad2degree * math.atan((v_sec[0] - nz(v_sec[10])) / 10)
+    slopeD
+
+color fill_color = na
+period = 'D'
+sma_50 = ta.sma(close, 50)
+sma_200 = ta.sma(close, 200)
+
+
+slope_sma_50 = calcslope(sma_50)
+slope_sma_200 = calcslope(sma_200)
+
+if close >= sma_50 and sma_50 >= sma_200 and slope_sma_50 >= 0 and slope_sma_200 >= 0
+    fill_color := bullish
+    regime := 'bullish'
+else if close <= sma_50 and sma_50 >= sma_200
+    fill_color := warning
+    regime := 'warning'
+else if slope_sma_50 <= -5 and slope_sma_200 >= 5 and sma_50 >= sma_200
+    fill_color := distribution
+    regime := 'distribution'
+else if slope_sma_50 <= -5 and slope_sma_200 <= -5 and sma_50 <= sma_200 or close < sma_50 and close < sma_200
+    fill_color := bearish
+    regime := 'bearish'
+else if slope_sma_50 >= 5 and slope_sma_200 <= -5 and close >= sma_50 and close <= sma_200
+    fill_color := recovery
+    regime := 'recovery'
+else if close >= sma_50 and close >= sma_200 and slope_sma_200 >= 5 and slope_sma_50 >= 5
+    fill_color := accumulation
+    regime := 'accumulation'
+
+
+plot(slope_sma_50, color=color.new(color.blue, 0))
+plot(slope_sma_200, color=color.new(color.red, 0))
+bgcolor(fill_color)
+
+print(txt) =>
+    // Create label on the first bar.
+    var lbl = label.new(bar_index, na, txt, xloc.bar_index, yloc.price, color(na), label.style_none, color.gray, size.normal, text.align_left)
+    // On next bars, update the label's x and y position, and the text it displays.
+    label.set_xy(lbl, bar_index, ta.highest(10)[1])
+    label.set_text(lbl, txt)
+
+print(regime)
+
